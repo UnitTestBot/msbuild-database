@@ -1,0 +1,28 @@
+name: Publish release
+
+on:
+  push:
+    branches:
+      - "main"
+
+jobs:
+  build-and-publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Setup .NET Core SDK 5.0.x
+        uses: actions/setup-dotnet@v3
+        with:
+          dotnet-version: '5.0.x'
+      - name: Build
+        run: dotnet build --configuration Release
+      - name: Set version
+        run: |
+          export VERSION=$(date '+%Y.%-m').$GITHUB_RUN_NUMBER
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
+      - uses: "marvinpinto/action-automatic-releases@latest"
+        with:
+          repo_token: "${{ secrets.GITHUB_TOKEN }}"
+          automatic_release_tag: "${{ env.VERSION }}"
+          prerelease: true
+          files: bin/Release/netstandard2.0/msbuild-database.dll

@@ -1,0 +1,22 @@
+name: Build dotnet package
+
+on: [push]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Setup .NET Core SDK 5.0.x
+        uses: actions/setup-dotnet@v3
+        with:
+          dotnet-version: '5.0.x'
+      - name: Build
+        run: dotnet build --configuration Release
+      - name: Upload dll
+        uses: actions/upload-artifact@v3
+        with:
+          name: msbuild-database
+          path: bin/Release/netstandard2.0/msbuild-database.dll
+  
+      
