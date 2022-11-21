@@ -1,9 +1,11 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Runtime.InteropServices;
 using System.Security;
 using System.Text;
+using System.Text.RegularExpressions;
 using System.Web;
 using Microsoft.Build.Framework;
 using Microsoft.Build.Utilities;
@@ -18,18 +20,18 @@ public class CompileDatabase : Logger
 {
     public override void Initialize(IEventSource eventSource)
     {
-        string CompileOutputFilePath = "compile_commands.json";
-        string LinkOutputFilePath = "link_commands.json";
+        string compileOutputFilePath = "compile_commands.json";
+        string linkOutputFilePath = "link_commands.json";
 
         try
         {
             const bool append = false;
             Encoding utf8WithoutBom = new UTF8Encoding(false);
-            this.CompileStreamWriter = new StreamWriter(CompileOutputFilePath, append, utf8WithoutBom);
+            this.CompileStreamWriter = new StreamWriter(compileOutputFilePath, append, utf8WithoutBom);
             this.firstLine = true;
             CompileStreamWriter.WriteLine("[");
 
-            this.LinkStreamWriter = new StreamWriter(LinkOutputFilePath, append, utf8WithoutBom);
+            this.LinkStreamWriter = new StreamWriter(linkOutputFilePath, append, utf8WithoutBom);
             LinkStreamWriter.WriteLine("[");
         }
         catch (Exception ex)
@@ -59,18 +61,55 @@ public class CompileDatabase : Logger
     {
         if (args is TaskCommandLineEventArgs taskArgs)
         {
-            const string clExe = ".exe ";
-            int clExeIndex = taskArgs.CommandLine.IndexOf(clExe);
-            if (clExeIndex == -1)
+            string taskName = taskArgs.TaskName.ToLowerInvariant();
+            if (taskName != "cl" && taskName != "link" && taskName != "lib")
             {
-                throw new LoggerException("Unexpected lack of executable in " + taskArgs.CommandLine);
+                return;
             }
 
-            string exePath = taskArgs.CommandLine.Substring(0, clExeIndex + clExe.Length - 1);
-            string argsString = taskArgs.CommandLine.Substring(clExeIndex + clExe.Length).TrimStart();
+            int clExeIndex = 0;
+            string exePath;
+            if (taskArgs.CommandLine.Length > 0 && taskArgs.CommandLine[0] == '"')
+            {
+                bool isEscaped = false;
+                clExeIndex++;
+                while (clExeIndex < taskArgs.CommandLine.Length)
+                {
+                    if (isEscaped)
+                    {
+                        isEscaped = false;
+                    }
+                    else if (taskArgs.CommandLine[clExeIndex] == '"')
+                    {
+                        break;
+                    }
+                    else if (taskArgs.CommandLine[clExeIndex] == '\\')
+                    {
+                        isEscaped = true;
+                    }
+
+                    clExeIndex++;
+                }
+
+                clExeIndex++;
+                exePath = Regex.Unescape(taskArgs.CommandLine.Substring(0, clExeIndex));
+            }
+            else
+            {
+                const string dotExe = ".exe";
+                clExeIndex = taskArgs.CommandLine.IndexOf(dotExe, StringComparison.OrdinalIgnoreCase) + dotExe.Length;
+                if (clExeIndex == -1)
+                {
+                    Console.WriteLine("Unexpected lack of executable in " + taskArgs.CommandLine);
+                    return;
+                }
+
+                exePath = taskArgs.CommandLine.Substring(0, clExeIndex);
+            }
+
+            string argsString = taskArgs.CommandLine.Substring(clExeIndex + 1).TrimStart();
             string[] cmdArgs = CommandLineToArgs(argsString);
             string dirname = Path.GetDirectoryName(taskArgs.ProjectFile);
-            String taskName = taskArgs.TaskName.ToLowerInvariant();
 
             if (taskName == "cl")
             {
@@ -93,7 +132,7 @@ public class CompileDatabase : Logger
                     ProcessCompileCommand(exePath, cmdArgs, dirname);
                 }
             }
-            else if (taskName == "link" || taskArgs.TaskName == "lib")
+            else if (taskName == "link" || taskName == "lib")
             {
                 ProcessLinkCommand(exePath, cmdArgs, dirname);
             }
