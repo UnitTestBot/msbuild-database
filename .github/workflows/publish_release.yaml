@@ -25,4 +25,4 @@ jobs:
           repo_token: "${{ secrets.GITHUB_TOKEN }}"
           automatic_release_tag: "${{ env.VERSION }}"
           prerelease: true
-          files: bin/Release/netstandard2.0/msbuild-database.dll
+          files: bin/Release/net462

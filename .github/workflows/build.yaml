@@ -1,6 +1,6 @@
 name: Build dotnet package
 
-on: [push]
+on: [ push ]
 
 jobs:
   build:
@@ -17,6 +17,4 @@ jobs:
         uses: actions/upload-artifact@v3
         with:
           name: msbuild-database
-          path: bin/Release/netstandard2.0/msbuild-database.dll
-  
-      
+          path: bin/Release/net462
