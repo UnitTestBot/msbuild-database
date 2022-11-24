@@ -22,7 +22,7 @@ jobs:
           echo "VERSION=$VERSION" >> $GITHUB_ENV
       - name: Archive release
         run: |
-          zip -r msbuild-release.zip bin/Release/net462/*
+          zip -r -j msbuild-release.zip bin/Release/net462/*
       - name: Publish release
         uses: "marvinpinto/action-automatic-releases@latest"
         with:
