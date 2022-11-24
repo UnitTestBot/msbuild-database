@@ -9,6 +9,8 @@ using System.Text.RegularExpressions;
 using System.Web;
 using Microsoft.Build.Framework;
 using Microsoft.Build.Utilities;
+using System.Text.Json;
+
 
 /// <summary>
 /// An MsBuild logger that emit compile_commands.json and link_commands.json files from a C++ project build.
@@ -18,6 +20,20 @@ using Microsoft.Build.Utilities;
 /// </remarks>
 public class CompileDatabase : Logger
 {
+    private class CompileCommand
+    {
+        public String command { get; set; }
+        public String directory { get; set; }
+        public String file { get; set; }
+    }
+
+    private class LinkCommand
+    {
+        public String command { get; set; }
+        public String directory { get; set; }
+        public List<String> files { get; set; }
+    }
+
     public override void Initialize(IEventSource eventSource)
     {
         string compileOutputFilePath = "compile_commands.json";
@@ -28,11 +44,10 @@ public class CompileDatabase : Logger
             const bool append = false;
             Encoding utf8WithoutBom = new UTF8Encoding(false);
             this.CompileStreamWriter = new StreamWriter(compileOutputFilePath, append, utf8WithoutBom);
-            this.firstLine = true;
-            CompileStreamWriter.WriteLine("[");
-
             this.LinkStreamWriter = new StreamWriter(linkOutputFilePath, append, utf8WithoutBom);
-            LinkStreamWriter.WriteLine("[");
+
+            compileCommands = new List<CompileCommand>();
+            linkCommands = new List<LinkCommand>();
         }
         catch (Exception ex)
         {
@@ -246,9 +261,9 @@ public class CompileDatabase : Logger
         }
 
         // simplify the compile command to avoid .. etc.
-        string compileCommand = '"' + Path.GetFullPath(compilerPath) + "\" " + String.Join(" ", cmdArgs);
+        string compileCommand = Path.GetFullPath(compilerPath) + " " + String.Join(" ", cmdArgs);
 
-        WriteCompileCommand(compileCommand, filenames, dirname);
+        addCompileCommand(compileCommand, filenames, dirname);
     }
 
     private void ProcessLinkCommand(string compilerPath, string[] cmdArgs, String dirname)
@@ -300,88 +315,58 @@ public class CompileDatabase : Logger
         }
 
         // simplify the compile command to avoid .. etc.
-        string compileCommand = '"' + Path.GetFullPath(compilerPath) + "\" " + String.Join(" ", cmdArgs);
+        string linkCommand = Path.GetFullPath(compilerPath) + " " + String.Join(" ", cmdArgs);
 
-        WriteLinkCommand(compileCommand, filenames, dirname);
+        addLinkCommand(linkCommand, filenames, dirname);
     }
 
-    private void WriteCompileCommand(string compileCommand, List<string> files, string dirname)
+    private void addCompileCommand(string compileCommand, List<string> files, string dirname)
     {
         foreach (string filename in files)
         {
-            // Terminate the preceding entry
-            if (firstLine)
+            CompileCommand commandVal = new CompileCommand
             {
-                firstLine = false;
-            }
-            else
-            {
-                CompileStreamWriter.WriteLine(",");
-            }
+                command = compileCommand,
+                directory = dirname,
+                file = filename
+            };
 
-            // Write one entry
-            CompileStreamWriter.WriteLine("  {");
-            CompileStreamWriter.WriteLine(String.Format(
-                "    \"command\": \"{0}\",",
-                HttpUtility.JavaScriptStringEncode(compileCommand)));
-            CompileStreamWriter.WriteLine(String.Format(
-                "    \"file\": \"{0}\",",
-                HttpUtility.JavaScriptStringEncode(filename)));
-            CompileStreamWriter.WriteLine(String.Format(
-                "    \"directory\": \"{0}\"",
-                HttpUtility.JavaScriptStringEncode(dirname)));
-            CompileStreamWriter.Write("  }");
+            compileCommands.Add(commandVal);
         }
     }
 
-    private void WriteLinkCommand(string linkCommand, List<string> files, string dirname)
+    private void addLinkCommand(string linkCommand, List<string> files, string dirname)
     {
-        LinkStreamWriter.WriteLine("  {");
-        LinkStreamWriter.WriteLine(String.Format(
-            "    \"directory\": \"{0}\",",
-            HttpUtility.JavaScriptStringEncode(dirname)));
-        LinkStreamWriter.WriteLine(String.Format(
-            "    \"command\": \"{0}\",",
-            HttpUtility.JavaScriptStringEncode(linkCommand)));
-        LinkStreamWriter.WriteLine("    \"files\": [");
-        bool fl = true;
-        foreach (string filename in files)
+        LinkCommand commandVal = new LinkCommand()
         {
-            if (fl)
-            {
-                fl = false;
-            }
-            else
-            {
-                LinkStreamWriter.WriteLine(",");
-            }
+            command = linkCommand,
+            directory = dirname,
+            files = files
+        };
 
-            LinkStreamWriter.Write(String.Format("      \"{0}\"",
-                HttpUtility.JavaScriptStringEncode(filename)));
-        }
-
-        LinkStreamWriter.WriteLine();
-        LinkStreamWriter.WriteLine("    ]");
-        LinkStreamWriter.WriteLine("  }");
+        linkCommands.Add(commandVal);
     }
 
     public override void Shutdown()
     {
-        if (!firstLine)
+        JsonSerializerOptions jsonSerializerOptions = new JsonSerializerOptions
         {
-            CompileStreamWriter.WriteLine();
-        }
-
-        CompileStreamWriter.WriteLine("]");
+            WriteIndented = true,
+            Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping
+        };
+        CompileStreamWriter.WriteLine(JsonSerializer.Serialize(compileCommands, jsonSerializerOptions));
         CompileStreamWriter.Close();
 
-        LinkStreamWriter.WriteLine("]");
+
+        LinkStreamWriter.WriteLine(JsonSerializer.Serialize(linkCommands, jsonSerializerOptions));
         LinkStreamWriter.Close();
 
         base.Shutdown();
     }
 
+
+    private List<CompileCommand> compileCommands;
+    private List<LinkCommand> linkCommands;
     private StreamWriter CompileStreamWriter;
     private StreamWriter LinkStreamWriter;
-    private bool firstLine;
 }
